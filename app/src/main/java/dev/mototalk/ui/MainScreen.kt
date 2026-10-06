@@ -15,7 +15,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,9 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -53,7 +50,6 @@ fun MainScreen(
     onStop: () -> Unit,
     onDuckTest: () -> Unit,
     onRecord: () -> Unit,
-    onMark: (String) -> Unit,
     onExport: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -67,7 +63,6 @@ fun MainScreen(
     var missingLoopback by remember { mutableStateOf(Permissions.missing(context, Permissions.loopback)) }
     var missingOptional by remember { mutableStateOf(Permissions.missing(context, Permissions.optional)) }
     var preflight by remember { mutableStateOf(Preflight.read(context)) }
-    var markLabel by rememberSaveable { mutableStateOf("") }
 
     fun refresh() {
         missingRide = Permissions.missing(context, Permissions.ride)
@@ -178,24 +173,7 @@ fun MainScreen(
                     OutlinedButton(onClick = onExport) { Text("Export") }
                 }
             }
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = markLabel,
-                        onValueChange = { markLabel = it },
-                        label = { Text("Mark label") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(onClick = {
-                        onMark(markLabel.ifBlank { "mark" })
-                        markLabel = ""
-                    }) { Text("Mark") }
-                }
-            }
+            item { TestStepper() }
             item {
                 Text("Recent log", style = MaterialTheme.typography.titleMedium)
             }

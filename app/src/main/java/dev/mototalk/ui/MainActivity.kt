@@ -25,7 +25,6 @@ class MainActivity : ComponentActivity() {
                     onStop = { RideService.stop(this) },
                     onDuckTest = { RideService.duckTest(this) },
                     onRecord = { RideService.recordSample(this) },
-                    onMark = DiagnosticsLog::mark,
                     onExport = ::exportFiles,
                 )
             }
