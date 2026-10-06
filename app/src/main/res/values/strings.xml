@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MotoTalk POC</string>
+    <string name="notif_channel_ride">Ride session</string>
+    <string name="notif_action_stop">Stop</string>
+</resources>
