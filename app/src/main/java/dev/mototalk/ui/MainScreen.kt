@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,9 +35,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import dev.mototalk.audio.AudioStats
+import dev.mototalk.audio.AudioStatsStore
 import dev.mototalk.diag.DeviceInfo
 import dev.mototalk.diag.DiagnosticsLog
 import dev.mototalk.diag.Preflight
+import dev.mototalk.intercom.LocalAudio
 import dev.mototalk.intercom.SessionKind
 import dev.mototalk.service.SessionStore
 import kotlinx.coroutines.delay
@@ -47,12 +51,15 @@ private const val RECENT_SHOWN = 50
 fun MainScreen(
     onStart: (SessionKind) -> Unit,
     onStop: () -> Unit,
+    onDuckTest: () -> Unit,
+    onRecord: () -> Unit,
     onMark: (String) -> Unit,
-    onExportLogs: () -> Unit,
+    onExport: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val state by SessionStore.state.collectAsStateWithLifecycle()
+    val audio by AudioStatsStore.state.collectAsStateWithLifecycle()
     val recent by DiagnosticsLog.recent.collectAsStateWithLifecycle()
     val device = remember { DeviceInfo.describe() }
 
@@ -91,6 +98,9 @@ fun MainScreen(
 
     val warnings = buildList {
         state.error?.let { add("Session did not start: $it ${state.errorDetail.orEmpty()}") }
+        if (state.running && state.kind == SessionKind.LOOPBACK) {
+            add("Loopback: keep the helmet on your head or the volume low, otherwise it howls.")
+        }
         if (!preflight.bluetoothOn) add("Bluetooth is off — the helmet cannot connect.")
         if (!preflight.wifiOn) add("Wi-Fi is off — Nearby needs it for a fast phone-to-phone link.")
         if (preflight.wifiNetworkConnected) add("Joined a Wi-Fi network — disconnect for P2P tests (§8.7).")
@@ -107,7 +117,7 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Text("MotoTalk POC · M0", style = MaterialTheme.typography.titleLarge)
+                Text("MotoTalk POC · M1", style = MaterialTheme.typography.titleLarge)
             }
             item {
                 InfoCard(
@@ -126,6 +136,9 @@ fun MainScreen(
                     "Remote audio: ${state.remoteAudio}",
                     "Intercom active: ${state.intercomActive}",
                 )
+            }
+            if (state.running) {
+                item { AudioCard(audio) }
             }
             if (warnings.isNotEmpty()) {
                 item { InfoCard("Check", *warnings.toTypedArray()) }
@@ -146,10 +159,23 @@ fun MainScreen(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
+                        onClick = onRecord,
+                        // Only on the helmet route: elsewhere it would record the phone's own mic (checklist M2).
+                        enabled = state.localAudio == LocalAudio.READY && audio.recordingSecondsLeft == 0,
+                    ) { Text(if (audio.recordingSecondsLeft > 0) "Recording… ${audio.recordingSecondsLeft}" else "Record 10 s") }
+                    OutlinedButton(
+                        onClick = onDuckTest,
+                        enabled = state.running && !audio.duckActive,
+                    ) { Text(if (audio.duckActive) "Ducking…" else "Duck test") }
+                }
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
                         onClick = { permissionLauncher.launch(Permissions.all.toTypedArray()) },
                         enabled = missingRide.isNotEmpty() || missingOptional.isNotEmpty(),
                     ) { Text("Grant permissions") }
-                    OutlinedButton(onClick = onExportLogs) { Text("Export logs") }
+                    OutlinedButton(onClick = onExport) { Text("Export") }
                 }
             }
             item {
@@ -176,6 +202,34 @@ fun MainScreen(
             items(recent.asReversed().take(RECENT_SHOWN)) { line ->
                 Text(line, fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 13.sp)
             }
+        }
+    }
+}
+
+@Composable
+private fun AudioCard(audio: AudioStats) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Audio", style = MaterialTheme.typography.titleSmall)
+            Text("Comm device: ${audio.commDevice ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "Mic → ${audio.recordRouted ?: "—"} · Play → ${audio.trackRouted ?: "—"}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Buffers: rec ${audio.recordBufferMs ?: "—"} ms · play ${audio.trackBufferMs ?: "—"} ms",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            val db = audio.micDbfs
+            Text(
+                "Mic level: ${db?.let { "%.0f dBFS".format(it) } ?: "—"}" + if (audio.micSilenced) " · SILENCED" else "",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            LinearProgressIndicator(
+                progress = { db?.let { ((it + 80.0) / 80.0).coerceIn(0.0, 1.0).toFloat() } ?: 0f },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            audio.ioError?.let { Text("I/O error: $it", style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }

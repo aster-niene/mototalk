@@ -23,6 +23,24 @@ object Names {
         else -> "MODE_$mode"
     }
 
+    fun focusChange(change: Int): String = when (change) {
+        AudioManager.AUDIOFOCUS_GAIN -> "GAIN"
+        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT -> "GAIN_TRANSIENT"
+        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK -> "GAIN_TRANSIENT_MAY_DUCK"
+        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE -> "GAIN_TRANSIENT_EXCLUSIVE"
+        AudioManager.AUDIOFOCUS_LOSS -> "LOSS"
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> "LOSS_TRANSIENT"
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> "LOSS_TRANSIENT_CAN_DUCK"
+        else -> "FOCUS_$change"
+    }
+
+    fun focusRequestResult(result: Int): String = when (result) {
+        AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> "GRANTED"
+        AudioManager.AUDIOFOCUS_REQUEST_FAILED -> "FAILED"
+        AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> "DELAYED"
+        else -> "RESULT_$result"
+    }
+
     fun deviceType(type: Int): String = when (type) {
         AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "BUILTIN_EARPIECE"
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "BUILTIN_SPEAKER"

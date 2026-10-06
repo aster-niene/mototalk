@@ -29,9 +29,17 @@ class AudioObserver(context: Context) {
         DiagnosticsLog.event("comm_device", mapOf("device" to device?.let(::describe)))
     }
 
+    // Registration immediately reports every connected device; mark that first report as the initial list.
+    private var initialDevicesReported = false
+
     private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-            DiagnosticsLog.event("audio_devices_added", mapOf("devices" to addedDevices.map(::describe)))
+            val initial = !initialDevicesReported
+            initialDevicesReported = true
+            DiagnosticsLog.event(
+                "audio_devices_added",
+                mapOf("initial" to initial, "devices" to addedDevices.map(::describe)),
+            )
         }
 
         override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
@@ -39,9 +47,15 @@ class AudioObserver(context: Context) {
         }
     }
 
+    // The callback fires many times with the same list; log only real changes.
+    private var lastPlayers: List<Map<String, Any?>>? = null
+
     private val playbackCallback = object : AudioManager.AudioPlaybackCallback() {
         override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) {
-            DiagnosticsLog.event("playback_configs", mapOf("players" to configs.map(::describe)))
+            val players = configs.map(::describe)
+            if (players == lastPlayers) return
+            lastPlayers = players
+            DiagnosticsLog.event("playback_configs", mapOf("players" to players))
         }
     }
 
@@ -75,10 +89,22 @@ class AudioObserver(context: Context) {
         "sampleRates" to device.sampleRates.toList(),
     )
 
-    // Player state is not public API; the anonymized toString() carries it (e.g. "state:started").
-    private fun describe(config: AudioPlaybackConfiguration): Map<String, Any?> = mapOf(
-        "usage" to Names.usage(config.audioAttributes.usage),
-        "contentType" to Names.contentType(config.audioAttributes.contentType),
-        "raw" to config.toString(),
-    )
+    private fun describe(config: AudioPlaybackConfiguration): Map<String, Any?> {
+        val raw = config.toString()
+        val parsed = parsePlayer(raw)
+        return linkedMapOf(
+            "piid" to parsed.piid,
+            "state" to parsed.state,
+            "usage" to Names.usage(config.audioAttributes.usage),
+            "contentType" to Names.contentType(config.audioAttributes.contentType),
+        ).apply { if (parsed.piid == null || parsed.state == null) put("raw", raw) }
+    }
 }
+
+internal data class ParsedPlayer(val piid: Int?, val state: String?)
+
+/** Player id and state are not public API; the anonymized toString() carries them ("piid:22511 ... state:started"). */
+internal fun parsePlayer(raw: String): ParsedPlayer = ParsedPlayer(
+    piid = Regex("""piid:(\d+)""").find(raw)?.groupValues?.get(1)?.toIntOrNull(),
+    state = Regex("""state:(\w+)""").find(raw)?.groupValues?.get(1),
+)

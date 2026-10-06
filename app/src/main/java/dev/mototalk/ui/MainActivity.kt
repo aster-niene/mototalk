@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.FileProvider
+import dev.mototalk.audio.Recordings
 import dev.mototalk.diag.DiagnosticsLog
 import dev.mototalk.intercom.ServiceError
 import dev.mototalk.intercom.SessionKind
@@ -22,8 +23,10 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     onStart = ::startSession,
                     onStop = { RideService.stop(this) },
+                    onDuckTest = { RideService.duckTest(this) },
+                    onRecord = { RideService.recordSample(this) },
                     onMark = DiagnosticsLog::mark,
-                    onExportLogs = ::exportLogs,
+                    onExport = ::exportFiles,
                 )
             }
         }
@@ -42,13 +45,14 @@ class MainActivity : ComponentActivity() {
         RideService.start(this, kind)
     }
 
-    private fun exportLogs() {
-        val files = DiagnosticsLog.logFiles()
+    /** Shares all diagnostics logs and "Record 10 s" WAV files. */
+    private fun exportFiles() {
+        val files = DiagnosticsLog.logFiles() + Recordings.list(this)
         DiagnosticsLog.event("logs_export", mapOf("files" to files.map { it.name }))
         if (files.isEmpty()) return
         val uris = ArrayList(files.map { FileProvider.getUriForFile(this, "$packageName.logs", it) })
         val send = Intent(Intent.ACTION_SEND_MULTIPLE)
-            .setType("text/plain")
+            .setType("*/*")
             .putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         startActivity(Intent.createChooser(send, "Export MotoTalk logs"))
