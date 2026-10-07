@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.content.FileProvider
 import dev.mototalk.audio.Recordings
 import dev.mototalk.diag.DiagnosticsLog
+import dev.mototalk.intercom.PeerStore
 import dev.mototalk.intercom.ServiceError
 import dev.mototalk.intercom.SessionKind
 import dev.mototalk.service.RideService
@@ -26,6 +27,13 @@ class MainActivity : ComponentActivity() {
                     onDuckTest = { RideService.duckTest(this) },
                     onRecord = { RideService.recordSample(this) },
                     onExport = ::exportFiles,
+                    onConnect = { RideService.connect(this, it) },
+                    onAcceptPairing = { RideService.acceptPairing(this, it) },
+                    onRejectPairing = { RideService.rejectPairing(this, it) },
+                    onForgetPartner = {
+                        DiagnosticsLog.event("partner_forget")
+                        PeerStore.forget(this)
+                    },
                 )
             }
         }

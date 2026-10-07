@@ -18,6 +18,7 @@ import dev.mototalk.diag.DeviceInfo
 import dev.mototalk.diag.DiagnosticsLog
 import dev.mototalk.diag.Preflight
 import dev.mototalk.diag.ScreenObserver
+import dev.mototalk.intercom.IntercomSession
 import dev.mototalk.intercom.ServiceError
 import dev.mototalk.intercom.SessionKind
 import dev.mototalk.intercom.SessionState
@@ -47,7 +48,11 @@ class RideService : Service() {
         private const val ACTION_STOP = "dev.mototalk.action.STOP"
         private const val ACTION_DUCK_TEST = "dev.mototalk.action.DUCK_TEST"
         private const val ACTION_RECORD = "dev.mototalk.action.RECORD"
+        private const val ACTION_CONNECT = "dev.mototalk.action.CONNECT"
+        private const val ACTION_ACCEPT = "dev.mototalk.action.ACCEPT"
+        private const val ACTION_REJECT = "dev.mototalk.action.REJECT"
         private const val EXTRA_KIND = "kind"
+        private const val EXTRA_ENDPOINT = "endpointId"
 
         /** Observers outlive Stop by this long: SCO-down / A2DP-resume events arrive after release (checklist M5). */
         private const val OBSERVER_TAIL_MS = 4_000L
@@ -74,12 +79,25 @@ class RideService : Service() {
         fun recordSample(context: Context) {
             context.startService(Intent(context, RideService::class.java).setAction(ACTION_RECORD))
         }
+
+        /** Connect to a rider found nearby (first pairing). */
+        fun connect(context: Context, endpointId: String) = command(context, ACTION_CONNECT, endpointId)
+
+        /** Accept / reject a first-time pairing after comparing the digits. */
+        fun acceptPairing(context: Context, endpointId: String) = command(context, ACTION_ACCEPT, endpointId)
+
+        fun rejectPairing(context: Context, endpointId: String) = command(context, ACTION_REJECT, endpointId)
+
+        private fun command(context: Context, action: String, endpointId: String) {
+            context.startService(Intent(context, RideService::class.java).setAction(action).putExtra(EXTRA_ENDPOINT, endpointId))
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private var inForeground = false
     private var audioSession: AudioSession? = null
+    private var intercom: IntercomSession? = null
     private var audioObserver: AudioObserver? = null
     private var radioObserver: RadioObserver? = null
     private var screenObserver: ScreenObserver? = null
@@ -111,6 +129,9 @@ class RideService : Service() {
             ACTION_STOP -> handleStop("user")
             ACTION_DUCK_TEST -> audioSession?.duckTest() ?: stopIfIdle()
             ACTION_RECORD -> audioSession?.recordSample() ?: stopIfIdle()
+            ACTION_CONNECT -> intercom?.connect(intent.getStringExtra(EXTRA_ENDPOINT).orEmpty()) ?: stopIfIdle()
+            ACTION_ACCEPT -> intercom?.acceptPairing(intent.getStringExtra(EXTRA_ENDPOINT).orEmpty()) ?: stopIfIdle()
+            ACTION_REJECT -> intercom?.rejectPairing(intent.getStringExtra(EXTRA_ENDPOINT).orEmpty()) ?: stopIfIdle()
             else -> stopIfIdle()
         }
         return START_NOT_STICKY
@@ -163,7 +184,10 @@ class RideService : Service() {
         audioObserver = AudioObserver(this).also { it.start() }
         radioObserver = RadioObserver(this).also { it.start() }
         screenObserver = ScreenObserver(this).also { it.start() }
-        audioSession = AudioSession(this, kind).also { it.start() }
+        val audio = AudioSession(this, kind).also { audioSession = it }
+        // RIDE talks to the partner phone; LOOPBACK stays local.
+        if (kind == SessionKind.RIDE) intercom = IntercomSession(this, audio).also { it.start() }
+        audio.start()
     }
 
     private fun handleStop(reason: String) {
@@ -174,6 +198,8 @@ class RideService : Service() {
         DiagnosticsLog.event("session_stop", mapOf("reason" to reason))
         inForeground = false
         notificationJob?.cancel()
+        intercom?.stop()
+        intercom = null
         audioSession?.stop()
         audioSession = null
         SessionStore.update("session_stop") { SessionState() }
@@ -200,6 +226,8 @@ class RideService : Service() {
             // Destroyed without Stop (e.g. killed by the system): record it, reset the shared state.
             DiagnosticsLog.event("session_stop", mapOf("reason" to "service_destroyed"))
             inForeground = false
+            intercom?.stop()
+            intercom = null
             audioSession?.stop()
             audioSession = null
             SessionStore.update("service_destroyed") { SessionState() }

@@ -4,7 +4,8 @@ Android-интерком для мотоциклистов: телефон — �
 
 - План проекта: [MotoTalk_High_Level_Project_Plan.md](MotoTalk_High_Level_Project_Plan.md)
 - Требования к POC: [MotoTalk_POC_Requirements.md](MotoTalk_POC_Requirements.md)
-- Тест-кейсы M1: [MotoTalk_M1_Test_Cases.md](MotoTalk_M1_Test_Cases.md)
+- Тест-кейсы двух телефонов (0.1.0): [MotoTalk_Intercom_Test_Cases.md](MotoTalk_Intercom_Test_Cases.md)
+- Тест-кейсы одного телефона (M1): [MotoTalk_M1_Test_Cases.md](MotoTalk_M1_Test_Cases.md)
 - APK: [Releases](https://github.com/aster-niene/mototalk/releases)
 
 ## Статус
@@ -22,7 +23,12 @@ Android-интерком для мотоциклистов: телефон — �
 - `VoiceIo` — AudioRecord/AudioTrack 16 kHz, Loopback;
 - **Record 10 s** (WAV) и **Duck test** (FR-2).
 
-Nearby (M2) ещё не реализован.
+**0.1.0 — разговор двух телефонов (M2 + M3 + ducking):**
+
+- `IntercomSession` — Nearby Connections (P2P_POINT_TO_POINT): поиск, сопряжение по коду, автоподключение к запомненному партнёру, PING/PONG, обрыв за 5 с, переподключение без касаний, BYE;
+- голос: микрофон шлема → `VadGate` (передаёт только речь, pre-roll 100 мс) → PCM 16 kHz → `PlayoutBuffer` → шлем партнёра;
+- музыка приглушается, пока говорит партнёр;
+- голосовой канал шлема открыт всю поездку (D4); гарнитуры LE Audio принимаются как маршрут (D14).
 
 ## Сборка
 
@@ -69,11 +75,13 @@ AGP 8.10.1 — максимум, который открывает устано�
 
 ```text
 app/src/main/java/dev/mototalk/
-├── audio/       AudioSession (маршрут SCO, звонки, duck test), VoiceIo (запись/воспроизведение),
-│                AudioObserver, Dsp, Wav, RouteRules, AudioStats, Recordings
+├── audio/       AudioSession (маршрут к гарнитуре, звонки, фокус музыки), VoiceIo (запись/воспроизведение),
+│                VadGate + VoiceDetector + HighPass (гейт речи), AudioObserver, Dsp, Wav, RouteRules, AudioStats
 ├── bluetooth/   RadioObserver — HFP/SCO, A2DP, адаптер, Wi-Fi
 ├── diag/        DiagnosticsLog (JSONL), Json, DeviceInfo/DeviceIdentity, Preflight, Names, ScreenObserver
-├── intercom/    SessionState — три оси состояния (FR-9)
+├── intercom/    IntercomSession (связь с партнёром), Protocol, PlayoutBuffer, SessionState (три оси FR-9),
+│                IntercomStore + PeerStore, VoiceSettings
+├── transport/   PeerTransport, NearbyTransport
 ├── service/     RideService (FGS), SessionStore, RideNotification
-└── ui/          MainActivity, MainScreen (Compose), Permissions, Theme
+└── ui/          MainActivity, MainScreen, IntercomCard, TestStepper, Permissions, Theme
 ```

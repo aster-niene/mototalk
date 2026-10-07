@@ -16,14 +16,14 @@ object Dsp {
             val s = samples[i].toDouble()
             sum += s * s
         }
-        return toDbfs(sqrt(sum / count))
+        return amplitudeToDbfs(sqrt(sum / count))
     }
 
     /** Peak level of PCM16 samples in dBFS. */
     fun peakDbfs(samples: ShortArray, count: Int = samples.size): Double {
         var peak = 0
         for (i in 0 until count) peak = maxOf(peak, abs(samples[i].toInt()))
-        return toDbfs(peak.toDouble())
+        return amplitudeToDbfs(peak.toDouble())
     }
 
     fun hasSignal(samples: ShortArray, count: Int = samples.size): Boolean {
@@ -31,6 +31,6 @@ object Dsp {
         return false
     }
 
-    private fun toDbfs(amplitude: Double): Double =
+    fun amplitudeToDbfs(amplitude: Double): Double =
         if (amplitude <= 0.0) SILENCE_DBFS else (20 * log10(amplitude / 32768.0)).coerceAtLeast(SILENCE_DBFS)
 }

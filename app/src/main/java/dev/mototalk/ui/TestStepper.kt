@@ -17,8 +17,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import dev.mototalk.diag.DiagnosticsLog
 
-/** Test cases from MotoTalk_M1_Test_Cases.md, in order. */
+/** Test cases in order: two-phone intercom (MotoTalk_Intercom_Test_Cases.md), then Phase 0 (MotoTalk_M1_Test_Cases.md). */
 private val TEST_CASES = listOf(
+    "I-01" to "Первое соединение",
+    "I-02" to "Разговор",
+    "I-03" to "Музыка в разговоре",
+    "I-04" to "Соединение без кнопок",
+    "I-05" to "Обрыв и возврат",
+    "I-06" to "Дальность",
+    "I-07" to "Звонок",
+    "I-08" to "15 минут в карманах",
     "TC-01" to "Шлем как устройство",
     "TC-02" to "Слышу себя",
     "TC-03" to "Запись 10 с",
@@ -35,7 +43,7 @@ private val TEST_CASES = listOf(
     "TC-14" to "30 минут",
 )
 
-private const val PREFS = "test_stepper"
+private const val PREFS = "test_stepper_v2" // new test list in 0.1.0: start from scratch
 private const val KEY_INDEX = "index"
 
 /**

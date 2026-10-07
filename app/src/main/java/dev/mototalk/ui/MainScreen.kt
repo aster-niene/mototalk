@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -35,6 +36,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import dev.mototalk.audio.AudioStats
 import dev.mototalk.audio.AudioStatsStore
 import dev.mototalk.diag.DeviceInfo
+import dev.mototalk.intercom.IntercomStore
+import dev.mototalk.intercom.PeerStore
 import dev.mototalk.diag.DiagnosticsLog
 import dev.mototalk.diag.Preflight
 import dev.mototalk.intercom.LocalAudio
@@ -51,11 +54,17 @@ fun MainScreen(
     onDuckTest: () -> Unit,
     onRecord: () -> Unit,
     onExport: () -> Unit,
+    onConnect: (String) -> Unit,
+    onAcceptPairing: (String) -> Unit,
+    onRejectPairing: (String) -> Unit,
+    onForgetPartner: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val state by SessionStore.state.collectAsStateWithLifecycle()
     val audio by AudioStatsStore.state.collectAsStateWithLifecycle()
+    val intercom by IntercomStore.state.collectAsStateWithLifecycle()
+    val partner by PeerStore.peer.collectAsStateWithLifecycle()
     val recent by DiagnosticsLog.recent.collectAsStateWithLifecycle()
     val device = remember { DeviceInfo.describe() }
 
@@ -103,6 +112,8 @@ fun MainScreen(
         if (missingOptional.isNotEmpty()) add("Notifications denied — the session notice is only in Task Manager.")
     }
 
+    intercom.pairing?.let { PairingDialog(it, onAcceptPairing, onRejectPairing) }
+
     Scaffold { padding ->
         LazyColumn(
             modifier = Modifier
@@ -112,7 +123,7 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Text("MotoTalk POC · M1", style = MaterialTheme.typography.titleLarge)
+                Text("MotoTalk POC · 0.1.0", style = MaterialTheme.typography.titleLarge)
             }
             item {
                 InfoCard(
@@ -131,6 +142,9 @@ fun MainScreen(
                     "Remote audio: ${state.remoteAudio}",
                     "Intercom active: ${state.intercomActive}",
                 )
+            }
+            if (state.running && state.kind == SessionKind.RIDE) {
+                item { IntercomCard(state, intercom, onConnect) }
             }
             if (state.running) {
                 item { AudioCard(audio) }
@@ -171,6 +185,14 @@ fun MainScreen(
                         enabled = missingRide.isNotEmpty() || missingOptional.isNotEmpty(),
                     ) { Text("Grant permissions") }
                     OutlinedButton(onClick = onExport) { Text("Export") }
+                }
+            }
+            partner?.let { p ->
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Partner: ${p.name}", modifier = Modifier.weight(1f))
+                        OutlinedButton(onClick = onForgetPartner, enabled = !state.running) { Text("Forget") }
+                    }
                 }
             }
             item { TestStepper() }

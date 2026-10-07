@@ -44,6 +44,12 @@ class VoiceIo(private val events: Events) {
     /** Play the microphone back into the same headset (Loopback). */
     @Volatile var monitor = false
 
+    /** RIDE: receives every helmet-mic frame while the route is up (I/O thread). */
+    @Volatile var frameSink: ((ShortArray, Int) -> Unit)? = null
+
+    /** RIDE: the partner's voice to play; null or a null frame means silence (I/O thread). */
+    @Volatile var playoutSource: (() -> ShortArray?)? = null
+
     /** When muted the track plays silence (no SCO route: the voice would go to the phone earpiece). */
     @Volatile var muted = true
 
@@ -155,7 +161,13 @@ class VoiceIo(private val events: Events) {
             }
             appendRecording(buf, n)
 
-            track?.write(if (!muted && monitor) buf else silence, 0, n)
+            val out = if (muted) {
+                silence
+            } else {
+                frameSink?.invoke(buf, n)
+                if (monitor) buf else playoutSource?.invoke() ?: silence
+            }
+            track?.write(out, 0, minOf(n, out.size))
         }
     }
 

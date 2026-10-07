@@ -16,6 +16,8 @@ data class AudioStats(
     val micSilenced: Boolean = false,
     val recordingSecondsLeft: Int = 0,
     val duckActive: Boolean = false,
+    /** Music focus is held (duck test or partner speaking). */
+    val musicDucked: Boolean = false,
     val ioError: String? = null,
 )
 

@@ -50,7 +50,9 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
     private var routeRequestedAt = 0L
     private var micSilenced = false
     private var focusRequest: AudioFocusRequest? = null
+    private var focusHeld = false
     private var duckActive = false
+    private var partnerSpeaking = false
 
     private val retryRunnable = Runnable { requestSco("retry") }
     private val routeTimeoutRunnable = Runnable { onRouteTimeout() }
@@ -83,7 +85,7 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
         AudioManager.OnCommunicationDeviceChangedListener { device -> onCommunicationDeviceChanged(device) }
     private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-            if (addedDevices.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }) onScoDeviceAppeared()
+            if (addedDevices.any { isHeadset(it.type) }) onScoDeviceAppeared()
         }
     }
     private val recordingCallback = object : AudioManager.AudioRecordingCallback() {
@@ -110,7 +112,7 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
         if (stopped) return
         stopped = true
         handler.removeCallbacksAndMessages(null)
-        endDuckTest("stop")
+        releaseFocus("stop")
         DiagnosticsLog.event("route_release", mapOf("state" to state))
         io.stop()
         am.clearCommunicationDevice()
@@ -123,9 +125,44 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
         AudioStatsStore.reset()
     }
 
+    /** RIDE: helmet-mic frames go to the intercom (I/O thread). Set before or during the session. */
+    fun setFrameSink(sink: ((ShortArray, Int) -> Unit)?) {
+        io.frameSink = sink
+    }
+
+    /** RIDE: where the partner's voice comes from (I/O thread). */
+    fun setPlayoutSource(source: (() -> ShortArray?)?) {
+        io.playoutSource = source
+    }
+
+    /** FR-7: duck the music while the partner speaks. Main thread. */
+    fun setPartnerSpeech(speaking: Boolean) {
+        if (stopped || partnerSpeaking == speaking) return
+        partnerSpeaking = speaking
+        updateFocus(if (speaking) "partner_speech" else "partner_silent")
+    }
+
     /** FR-2 "Duck test": hold AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK for 5 s (checklist M7, M8). */
     fun duckTest() {
         if (stopped || duckActive) return
+        duckActive = true
+        val granted = updateFocus("duck_test")
+        DiagnosticsLog.event("duck_test_start", mapOf("granted" to granted, "localAudio" to state, "durationMs" to DUCK_TEST_MS))
+        if (!granted) {
+            duckActive = false
+            return
+        }
+        AudioStatsStore.update { it.copy(duckActive = true) }
+        handler.postDelayed(duckEndRunnable, DUCK_TEST_MS)
+    }
+
+    /**
+     * One AudioFocusRequest per session (FR-7), held while the duck test or the partner's speech wants it.
+     * Returns whether focus is held afterwards.
+     */
+    private fun updateFocus(reason: String): Boolean {
+        val want = duckActive || partnerSpeaking
+        if (want == focusHeld) return focusHeld
         val request = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -138,15 +175,17 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
             }, handler)
             .build()
             .also { focusRequest = it }
-        val result = am.requestAudioFocus(request)
-        DiagnosticsLog.event(
-            "duck_test_start",
-            mapOf("result" to Names.focusRequestResult(result), "localAudio" to state, "durationMs" to DUCK_TEST_MS),
-        )
-        if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) return
-        duckActive = true
-        AudioStatsStore.update { it.copy(duckActive = true) }
-        handler.postDelayed(duckEndRunnable, DUCK_TEST_MS)
+        if (want) {
+            val result = am.requestAudioFocus(request)
+            focusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            DiagnosticsLog.event("focus_request", mapOf("reason" to reason, "result" to Names.focusRequestResult(result)))
+        } else {
+            val result = am.abandonAudioFocusRequest(request)
+            focusHeld = false
+            DiagnosticsLog.event("focus_abandon", mapOf("reason" to reason, "result" to Names.focusRequestResult(result)))
+        }
+        AudioStatsStore.update { it.copy(duckActive = duckActive, musicDucked = focusHeld) }
+        return focusHeld
     }
 
     /** FR-2 "Record 10 s": microphone audio into a WAV file (checklist M2). */
@@ -183,7 +222,10 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
     private fun requestSco(reason: String) {
         if (stopped || state == LocalAudio.PAUSED_BY_CALL) return
         handler.removeCallbacks(retryRunnable)
-        val sco = am.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+        val sco = am.availableCommunicationDevices.let { devices ->
+            devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLE_HEADSET }
+                ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+        }
         if (sco == null) {
             DiagnosticsLog.event("route_request", mapOf("reason" to reason, "device" to null, "attempt" to retryAttempt))
             if (state != LocalAudio.DEVICE_LOST) setState(LocalAudio.DEVICE_LOST, "no_sco_device")
@@ -200,7 +242,7 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
             scheduleRetry()
             return
         }
-        if (am.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+        if (isHeadset(am.communicationDevice?.type)) {
             onScoActive("already_active")
             return
         }
@@ -211,7 +253,7 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
     private fun onCommunicationDeviceChanged(device: AudioDeviceInfo?) {
         AudioStatsStore.update { it.copy(commDevice = device?.let(::label)) }
         if (stopped) return
-        if (device?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+        if (isHeadset(device?.type)) {
             if (state == LocalAudio.ROUTING || state == LocalAudio.DEVICE_LOST) onScoActive("callback")
         } else if (state == LocalAudio.READY) {
             onScoLost("comm_device_${device?.type?.let(Names::deviceType) ?: "none"}")
@@ -242,7 +284,7 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
             "io_routing",
             mapOf("record" to record?.let(Names::deviceType), "track" to track?.let(Names::deviceType)),
         )
-        if (state != LocalAudio.READY || record == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return
+        if (state != LocalAudio.READY || isHeadset(record)) return
         if (recordRestarts >= MAX_RECORD_RESTARTS) {
             DiagnosticsLog.event("record_not_on_sco", mapOf("restarts" to recordRestarts))
             return
@@ -297,7 +339,7 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
         handler.removeCallbacks(retryRunnable)
         handler.removeCallbacks(routeTimeoutRunnable)
         handler.removeCallbacks(routeCheckRunnable)
-        endDuckTest("call")
+        releaseFocus("call")
         io.stop()
         am.clearCommunicationDevice()
         am.mode = AudioManager.MODE_NORMAL
@@ -316,9 +358,16 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
         handler.removeCallbacks(duckEndRunnable)
         if (!duckActive) return
         duckActive = false
-        val result = focusRequest?.let { am.abandonAudioFocusRequest(it) }
-        DiagnosticsLog.event("duck_test_end", mapOf("reason" to reason, "result" to result?.let(Names::focusRequestResult)))
-        AudioStatsStore.update { it.copy(duckActive = false) }
+        updateFocus("duck_test_end")
+        DiagnosticsLog.event("duck_test_end", mapOf("reason" to reason))
+    }
+
+    /** Releases any held focus: on Stop and calls nothing may stay ducked. */
+    private fun releaseFocus(reason: String) {
+        handler.removeCallbacks(duckEndRunnable)
+        duckActive = false
+        partnerSpeaking = false
+        updateFocus(reason)
     }
 
     private fun checkSilenced(configs: List<AudioRecordingConfiguration>) {
@@ -334,6 +383,10 @@ class AudioSession(private val context: Context, kind: SessionKind) : VoiceIo.Ev
         state = next
         SessionStore.update(reason) { it.copy(localAudio = next) }
     }
+
+    /** Bluetooth Classic (HFP/SCO) or LE Audio headset — the helmet route. */
+    private fun isHeadset(type: Int?) =
+        type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO || type == AudioDeviceInfo.TYPE_BLE_HEADSET
 
     private fun label(device: AudioDeviceInfo) = "${Names.deviceType(device.type)} ${device.productName}"
 
