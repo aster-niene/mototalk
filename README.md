@@ -6,6 +6,7 @@ Android-интерком для мотоциклистов: телефон — �
 - Требования к POC: [MotoTalk_POC_Requirements.md](MotoTalk_POC_Requirements.md)
 - Тест-кейсы двух телефонов (0.1.0): [MotoTalk_Intercom_Test_Cases.md](MotoTalk_Intercom_Test_Cases.md)
 - Тест-кейсы одного телефона (M1): [MotoTalk_M1_Test_Cases.md](MotoTalk_M1_Test_Cases.md)
+- Свой блок в шлем на ESP32 (текущее направление): [MotoTalk_Helmet_Unit.md](MotoTalk_Helmet_Unit.md)
 - APK: [Releases](https://github.com/aster-niene/mototalk/releases)
 
 ## Статус
@@ -29,6 +30,11 @@ Android-интерком для мотоциклистов: телефон — �
 - голос: микрофон шлема → `VadGate` (передаёт только речь, pre-roll 100 мс) → PCM 16 kHz → `PlayoutBuffer` → шлем партнёра;
 - музыка приглушается, пока говорит партнёр;
 - голосовой канал шлема открыт всю поездку (D4); гарнитуры LE Audio принимаются как маршрут (D14).
+
+**0.2.0 — проверка радио шлема (H0):**
+
+- `firmware/h0_radio_test` — ESP32 принимает музыку по A2DP и одновременно отвечает эхом на поток «голоса» по Bluetooth SPP, раз в секунду шлёт свои счётчики (перебои музыки, запас буфера, потери);
+- в приложении карточка «Проверка радио шлема (H0)»: одна кнопка, 2,5 минуты, ступени 0 → 64 → 128 → 256 → 512 кбит/с, итог на экране.
 
 ## Сборка
 

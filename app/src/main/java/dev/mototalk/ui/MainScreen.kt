@@ -1,5 +1,6 @@
 package dev.mototalk.ui
 
+import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import dev.mototalk.BuildConfig
 import dev.mototalk.audio.AudioStats
 import dev.mototalk.audio.AudioStatsStore
 import dev.mototalk.diag.DeviceInfo
@@ -123,7 +125,7 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Text("MotoTalk POC · 0.1.0", style = MaterialTheme.typography.titleLarge)
+                Text("MotoTalk POC · ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge)
             }
             item {
                 InfoCard(
@@ -186,6 +188,11 @@ fun MainScreen(
                     ) { Text("Grant permissions") }
                     OutlinedButton(onClick = onExport) { Text("Export") }
                 }
+            }
+            item {
+                HelmetRadioCard(
+                    canRun = preflight.bluetoothOn && Manifest.permission.BLUETOOTH_CONNECT !in missingLoopback,
+                )
             }
             partner?.let { p ->
                 item {
